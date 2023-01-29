@@ -1,26 +1,84 @@
 
 #include "lib/include.h"
 
-extern void Configura_Reg_PWM1(uint16_t freq)
+
+// La Tiva Chica cuenta con dos módulos de PWM0 y PWM1
+// y cada módulo contiene 4 generadores de PWM, además de que cada generador
+// proporciona dos salidas como pwmA y pwmB (comparten la frecuencia)
+
+//Experimento 1
+/*Usando el modulo 0 de PWM con una frecuencia de reloj del sistema de 50,000,000 Hz
+ * junto con el generador 1  habilitar alguno de los pwm's asociados y obtener un PWM
+ * cuya frecuencia sea de 10KHz
+ */
+//Experimento 2
+/*Usando el modulo 0 de PWM con una frecuencia de reloj del sistema de 20,000,000 Hz
+ * junto con el generador 0,1,2  habilitar alguno de los pwm's asociados y obtener un PWM
+ * cuya frecuencia sea de 50Hz con tres potenciometros variar el ciclo de trabajo
+ * para controlar la posicion de tres servos sg90 o otros.
+ *
+ */
+//Experimento 3
+/*Usando el modulo 0 de PWM con una frecuencia de reloj del sistema de 20,000,000 Hz
+ * junto con el generador 0,1,2  habilitar alguno de los pwm's asociados y obtener un PWM
+ * cuya frecuencia sea de 50Hz , utilizando el uart de la practica 3
+ * se enviara dato desde interfaz de simulink para controlar la intensidad luminosa 
+ * usando un led RGB externa 
+ *
+ */
+
+extern void PWM_CONFIGURATION(int module, int divisor,  int freq, int f_clk, int duty_cycle)
 {
-    SYSCTL->RCGCPWM |= (1<<0); /*Enable reloj de modulo PWM1 pag 354*/
-    SYSCTL->RCGCGPIO |= (1<<5); /*Enable reloj de GPIO Puerto F pag 340 pin 5*/
-   // GPIOF->AFSEL |= (1<<3)|(1<<2)|(1<<1); /*Control de registros ya sea por GPIO o Otros Pag 672*/
-    GPIOF_AHB->AFSEL |= 0x0E;
-    GPIOF_AHB->PCTL |= (GPIOF_AHB->PCTL&0xFFFF000F) | 0x00006660; /*Combinado con la tabla Pag 1351 y el registro PCTL le digo que es pwm Pag 689*/
-    GPIOF_AHB->DEN |= (1<<3)|(1<<2)|(1<<1); /* para decirle si es digital o no Pag 682*/
-    PWM0->CC = (1<<8) | (0x2<<0);  /*Enable o Disable Divisor  Pag 1747*/
-    PWM0->_0_CTL = (0<<0);
-    PWM0->_1_CTL = (0<<0); /*Bloqueo y desbloqueo*/
-    PWM0->_1_GENB = 0x0000080C; /*Registro de las acciones del pwm Pag 1285*/
-    PWM0->_1_GENA = 0x0000008C; /*Registro de las acciones del pwm Pag 1282*/
-    PWM0->_0_GENB = 0x0000008C;//PWM5
-    PWM0->_1_LOAD = (int)(2500000/freq); /*cuentas=fclk/fpwm  para 1khz cuentas = (20,000,000/1000)*/
-    PWM0->_0_LOAD = (int)(2500000/freq);
-    PWM0->_1_CMPB = 0;
-    PWM0->_1_CMPA = 0;
-    PWM0->_0_CMPA = 0;
-    PWM0->_1_CTL = (1<<0);// Se activa el generador 3
-    PWM0->_0_CTL = (1<<0);// Se activa el generador 2
-    PWM0->ENABLE = (1<<3) | (1<<2) | (1<<1); /*habilitar el bloque pa que pase Pag 1247*/
+    SYSCTL->RCGCPWM |= (1 << module); // 0 o 1 para cada módulo
+    SYSCTL->RCGCGPIO |= (1 << 1); // Activamos Puerto B
+    if (divisor == 0){
+        SYSCTL->RCC &= ~0x00100000; // el bit 20 es el de USEPWMDIV
+    }
+    else if (divisor == 64){
+        SYSCTL->RCC |= 0x00100000; // el bit 20 es el de USEPWMDIV
+        SYSCTL->RCC |= 0x000E0000; // 64 divisor
+        f_clk = f_clk / divisor;
+    }
+    // Puerto B
+    GPIOB->AFSEL |= (1 << 4) | (1 << 7); // PB4 Y PB7 PINS
+    GPIOB->PCTL &= ~0xF00F0000;//0b00001111000000001111111111111111; Poner en 0 los pines 4 y 5
+    GPIOB->PCTL |= 0x40040000;//0b00000000010001000000000000000000; // Configurar modo de PWM asignando el valor decimal al campo de bit de los pines 4 y 5
+    GPIOB->DEN |= (1 << 4) | (1 << 7); // Digital Enable para los mismos pines del AFSEL
+    
+    /*GPIOE->AFSEL |= (1 << 4); // PE4 
+    GPIOE->PCTL &= ~0x000F0000; 
+    GPIOE->PCTL |= 0x00040000; // Pag 651
+    GPIOE->DEN |= (1 << 4);*/
+
+    PWM0 -> _0_CTL &= ~(1 << 0);
+    PWM0 -> _1_CTL &= ~(1 << 0); // Deshabilita el contador del generador 1
+    //PWM0 -> _2_CTL &= ~(1 << 0);
+
+    PWM0 -> _0_CTL &= ~(1 << 1);
+    PWM0 -> _1_CTL &= ~(1 << 1); // COUNT DOWN MODE
+    //PWM0 -> _2_CTL &= ~(1 << 1);
+
+    PWM0->_0_GENB = 0x0000080C; //0x0000080C;
+    PWM0->_1_GENA = 0x0000008C; // Cuando contador = LOAD Drive pwmA High, when comparator A matches counter Drive pwmA Low
+    //PWM0->_2_GENA = 0x0000008C;
+    // CARGAS
+    PWM0->_0_LOAD = (f_clk/freq);
+    PWM0->_1_LOAD = (f_clk/freq); /*cuentas=fclk/fpwm  para 1khz cuentas = (16,000,000/1600)*/
+    //PWM0->_2_LOAD = (f_clk/freq);
+
+    PWM0->_0_CMPB = (int)((1.0 - (duty_cycle / 100.0)) *(f_clk / freq));
+    PWM0->_1_CMPA = (int)((1.0 - (duty_cycle / 100.0)) *(f_clk / freq));//2499; //(int)((duty_cycle / 100) * (int)(f_clk / freq)) - 1;//(1 - (duty_cycle / 100)) * (int)(f_clk / freq);
+    //PWM0->_2_CMPA = (int)((1.0 - (duty_cycle / 100.0)) *(f_clk / freq));
+
+
+    PWM0 -> _0_CTL = 1;
+    PWM0 -> _1_CTL = 1;
+    //PWM0 -> _2_CTL = 1;
+
+    //PWM0 -> ENABLE = 0x16; // CHANEL 1, 2 Y 4
+
+    PWM0->ENABLE = 0x6; // CHANNEL 1 Y 2
+
+    //PWM0->ENABLE = 0xC; // Habilitar channel 2 y 3
 }
+

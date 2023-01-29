@@ -1,68 +1,107 @@
-/*
- * ADC.c
- *
- *  Created on: 04/11/2019
- *      Author: ravenelco
- */
 #include "lib/include.h"
 
-extern void Configura_Reg_ADC0(void)
-{
-    /*
-    Habilitar el modulo 0 del ADC con dos canales analogicos 
-    en el puerto E a una velocidad de conversion de 250ksps
-    dandole la mayor prioridad al secuenciador 2 con evento
-    de procesador 
-    */
-     //Pag 396 para inicializar el modulo de reloj del adc RCGCADC
-    SYSCTL->RCGCADC = (1<<0); 
-    //Pag 382 (RGCGPIO) Puertos base habilitación del reloj
-    //                     F     E      D       C      B     A
-    SYSCTL->RCGCGPIO |= (1<<5)|(1<<4)|(0<<3)|(0<<2)|(0<<1)|(1<<0)|(1<<12)|(1<<8);
-    //Pag 760 (GPIODIR) Habilta los pines como I/O un cero para entrada y un uno para salida
-    GPIOE_AHB->DIR = (0<<5) | (0<<4); //PE5 y PE4
-    //(GPIOAFSEL) pag.770 Enable alternate función para que el modulo analógico tenga control de esos pines
-    GPIOE_AHB->AFSEL =  (1<<4) | (1<<5 );
-    //(GPIODEN) pag.781 desabilita el modo digital
-    GPIOE_AHB->DEN = (0<<4) | (0<<5 );
-    //Pag 787 GPIOPCTL registro combinado con el GPIOAFSEL y la tabla pag 1808
-    GPIOE_AHB->PCTL = GPIOE_AHB->PCTL & (0xFF00FFFF);
-    //(GPIOAMSEL) pag.786 habilitar analogico
-    GPIOE_AHB->AMSEL = (1<<5) | (1<<4);
-    //Pag 1159 El registro (ADCPC) establece la velocidad de conversión por segundo
-    ADC0->PC = (0<<2)|(0<<1)|(1<<0);//250ksps
-    //Pag 1099 Este registro (ADCSSPRI) configura la prioridad de los secuenciadores
-    ADC0->SSPRI = 0x3210;
-    //Pag 1077 (ADCACTSS) Este registro controla la activación de los secuenciadores
-    ADC0->ACTSS  =   (0<<3) | (0<<2) | (0<<1) | (0<<0);
-    //Pag 1091 Este registro (ADCEMUX) selecciona el evento que activa la conversión (trigger)
-    ADC0->EMUX  = (0x0000);
-    //Pag 1129 Este registro (ADCSSMUX2) define las entradas analógicas con el canal y secuenciador seleccionado
-    ADC0->SSMUX2 = 0x0089;
-    //pag 868 Este registro (ADCSSCTL2), configura el bit de control de muestreo y la interrupción
-    ADC0->SSCTL2 = (1<<6) | (1<<5) ;
-    /* Enable ADC Interrupt */
-    ADC0->IM |= (1<<2); /* Unmask ADC0 sequence 2 interrupt pag 1082*/
-    //NVIC_PRI4_R = (NVIC_PRI4_R & 0xFFFFFF00) | 0x00000020;
-    //NVIC_EN0_R = 0x00010000;
-    //Pag 1077 (ADCACTSS) Este registro controla la activación de los secuenciadores
-    ADC0->ACTSS = (0<<3) | (1<<2) | (0<<1) | (0<<0);
-    ADC0->PSSI |= (1<<2);
-}
-extern void ADC0_InSeq2(uint16_t *Result,uint16_t *duty){
+extern void ADC_CONFIGURATION_PORT_E(void){
+    SYSCTL -> RCGCADC = (1 << 0); // Enable Module 0
+    SYSCTL -> RCGCADC = (1 << 1); // Enable Module 1
 
-    //ADC Processor Sample Sequence Initiate (ADCPSSI)
-       ADC0->PSSI = 0x00000004;
-       while((ADC0->RIS&0x04)==0){}; // espera al convertidor
-       //Result[1] = ADC0->SSFIFO2&0xFFF; //  Leer  el resultado almacenado en la pila2
-       //Result[0] = ADC0->SSFIFO2&0xFFF;
-       //global = &Result[0];
-       //duty[1] = (Result[1]*46875)/4096;
-       //duty[0] = (Result[0]*46875)/4096;
-       //duty[1] = 47500 - (Result[1]*5000)/4096;
-       //duty[0] = 47500 - (Result[0]*5000)/4096;
-       ADC0->ISC = 0x0004;  //Conversion finalizada
+    SYSCTL -> RCGCGPIO |= (1 << 4); //| (1 << 5);
+    //                    Puerto E    Puerto F
+    // Configuracion de Pines EN DIRECTION REGISTER DIR para que sean outputs (1) o inputs (0)
+    GPIOE -> DIR &= ~(1 << 1); // AIN2 PE1
+    GPIOE -> DIR &= ~(1 << 2); // AIN1 PE2
+    GPIOE -> DIR &= ~(1 << 5); // AIN8 PE5
 
+    GPIOE -> AFSEL = (1 << 1) | (1 << 2) | (1 << 5);//0x3F; // E0-E5 AIN0-AIN3, AIN8-AIN9
+    GPIOE -> DEN = ~(1 << 1) | ~(1 << 2) | ~(1 << 5); //~0x3F;
+    GPIOE -> AMSEL = (1 << 1) | (1 << 2) | (1 << 5); //0x3F; 
+
+    /*GPIOD -> DIR &= ~(1 << 2); // AIN5 PD2
+    GPIOD -> DIR &= ~(1 << 1); // AIN6 PD1
+    GPIOD -> DIR &= ~(1 << 0); // AIN7 PD0
+
+    GPIOD -> AFSEL = (1 << 0) | (1 << 1)| (1 << 2);
+    GPIOD -> DEN = ~(1 << 0) | ~(1 << 1) | ~(1 << 2); 
+    GPIOD -> AMSEL = (1 << 0) | (1 << 1) | (1 << 2);  
+
+    GPIOB -> DIR &= ~(1 << 5); // AIN11 PB5
+    GPIOB -> AFSEL =  (1 << 5);
+    GPIOB -> DEN =  ~(1 << 5); 
+    GPIOB -> AMSEL = (1 << 5); */
+    // LED
+    /*GPIOF -> DEN = 0xff; 
+    GPIOF -> AFSEL = 0x00; 
+    GPIOF -> DIR = 0xff; // Output
+    GPIOF -> DATA = (1 << 1);*/
 }
 
+extern void ADC_CONFIGURATION_PORT_D(void){
+    SYSCTL -> RCGCADC = (1 << 0); // Enable Module 0
+    SYSCTL -> RCGCADC = (1 << 1); // Enable Module 1
+    SYSCTL -> RCGCGPIO |= (1 << 3) | (1 << 5);
+    GPIOD -> DIR &= ~(1 << 0); // AIN7 PD0
+    GPIOD -> DIR &= ~(1 << 1); // AIN6 PD1
+    GPIOD -> DIR &= ~(1 << 2); // AIN5 PD2
+    GPIOD -> AFSEL = (1 << 0) | (1 << 1) | (1 << 2);//0x3F; // E0-E5 AIN0-AIN3, AIN8-AIN9
+    GPIOD -> DEN = ~(1 << 0) | ~(1 << 1) | ~(1 << 2); //~0x3F;
+    GPIOD -> AMSEL = (1 << 0) | (1 << 1) | (1 << 2); //0x3F; 
+    // LED
+    /*GPIOF -> DEN = 0xff; 
+    GPIOF -> AFSEL = 0x00; 
+    GPIOF -> DIR = 0xff; // Output
+    GPIOF -> DATA = (1 << 1);*/
+}
 
+/*extern void SEQ_CONFIGURATION_3(void){
+    //ADC0 -> ACTSS &= ~0b1001; // Disable seq 0 and 3
+    ADC0->ACTSS = ~(1 << 3); //~0x9;
+    //ADC0 -> SSPRI = (0 << 12); High Priority of Seq 3
+    ADC0->EMUX &= 0x0000F000;
+    // Trigger for sampling
+    //ADC0 -> EMUX = (0xF << 0) | (0xF << 12);
+    //(0xF << 12); //(0xF << 0) | (0xF << 12); // 0xF to sample continuously 
+    
+    ADC0->SSMUX3 = 2; // AN2 CHANNEL
+    //ADC1 -> SSMUX0 = 0x98321;  // AN1-AN3, AN8-AN9 0b10011000001100100001
+
+    ADC0->SSCTL3 = 0x6; //0b0110;
+    ///ADC1 -> SSCTL0 = 0x66666;  // 0b01100110011001100110
+    ADC0->PC = 0x7; // 1 Msps
+
+    ADC0->IM = (1 << 3);  //| (1 << 0);
+
+    // Enable Seq
+    ADC0->ACTSS |= (1 << 3);//0x9;
+    ADC0->ISC=8;
+}*/
+
+extern void SEQ_CONFIGURATION_0(void){
+    ADC1 -> SSPRI = 0x3210;
+    ADC1 -> ACTSS &= ~(0x0F); 
+    ADC1 -> EMUX |= 0x0000;
+    ADC1 -> SSMUX0 |= 0x00000281; 
+    ADC1 -> SSCTL0 |= 0x00000644;//(1 << 17)| (1 << 18); //0x00064444; //0x66666; 
+    ADC1 -> PC = 0x7; 
+    ADC1 -> IM &= ~(0x0001); 
+    ADC1 -> ACTSS |= (1 << 0); 
+    ADC1 -> ISC = 1; 
+}
+extern void ADC_ISR_SEQ_0(uint32_t data[5]){
+    ADC1 -> PSSI = 0x00000001; //| (1 << 0);
+        while ((ADC1 -> RIS & 0x01) == 0){};
+        data[0] = ADC1 -> SSFIFO0 & 0xFFF;
+        data[1] = ADC1 -> SSFIFO0 & 0xFFF;
+        data[2] = ADC1 -> SSFIFO0 & 0xFFF;
+        //data[3] = ADC1 -> SSFIFO0 & 0xFFF;
+        //data[4] = ADC1 -> SSFIFO0 & 0xFFF;
+        ADC1 -> ISC = 0x0001; // Clearing 0b0001
+        //sprintf(ARREGLO, "%u\n", array[1]);
+        //printString(ARREGLO);
+        /*if (data[0] < 2040){
+            GPIOF -> DATA |= (1 << 1);
+            GPIOF -> DATA &= ~(1 << 2); 
+        }
+        else if (data[0] > 2040){
+            GPIOF -> DATA &= ~(1 << 1);
+            GPIOF -> DATA |= (1 << 2);
+        }*/
+}
